@@ -3,7 +3,6 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <WifiUDP.h>
 
 extern "C"
 {
@@ -12,17 +11,18 @@ extern "C"
 
 #define SSID "SASKTEL01G9"
 #define PASSWORD "v35j87v85tkm"
-#define PEER_IP "172.16.1.148"
+#define PEER_IP "172.16.1.157"
 #define PEER_PORT 8200
 #define BUFFER_SIZE 1024
 #define AVERAGE_NUM 3
 #define AVERAGE_CM_DOOR_OPEN 50
 #define PAUSE_TIME_MS 30000
-#define MS_DELAY 200
+#define MS_DELAY 1000
 
 const int trigPin = 23;
 const int echoPin = 22;
 
+int udp_socket = -1;
 int skip = 0;
 linked_list *ll = createLinkedList(AVERAGE_NUM);
 
@@ -56,9 +56,32 @@ unsigned long get_distance_cm(int trigPin, int echoPin)
   return pulseIn(echoPin, HIGH) * 0.034/2;
 }
 
+int createUDPsocket()
+{
+  if (udp_socket != -1)
+  {
+    return -1;
+  }
+
+  udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+  if (udp_socket < 0)
+  {
+    Serial.println("Failed to create UDP socket");
+    return -1;
+  }
+
+  return 0;
+}
+
 int send_message(char *peer_ip, int peer_port, char *message)
 {
-  /*
+  
+  if (udp_socket < 0)
+  {
+    Serial.println("UDP socket not initialzed");
+    return -1;
+  }
+
   struct sockaddr_in peer_addr = {.sin_family = AF_INET, .sin_port = htons(peer_port)};
 
   if (inet_pton(AF_INET, peer_ip, &(peer_addr.sin_addr)) <= 0)
@@ -67,38 +90,13 @@ int send_message(char *peer_ip, int peer_port, char *message)
     return -1;
   }
 
-  int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd < 0)
-  {
-    Serial.println("Something went wrong with socket");
-    return -1;
-  }
 
-  if (sendto(sockfd, message, strlen(message) + 1, 0, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0)
+  if (sendto(udp_socket, message, strlen(message) + 1, 0, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0)
   {
     Serial.println("Failed to sendto");
-    close(sockfd);
+    Serial.println(errno);
     return -1;
   }
-
-  close(sockfd);
-
-  return 0;
-  */
-
-  WiFiUDP udp;
-
-  IPAddress remoteIP;
-
-  if (!remoteIP.fromString(peer_ip))
-  {
-    Serial.println("IP Failed");
-    return -1;
-  }
-
-  udp.beginPacket(remoteIP, peer_port);
-  udp.write((const uint8_t *)message, strlen(message));
-  udp.endPacket();
 
   return 0;
 }
@@ -146,6 +144,7 @@ void setup() {
   else
   {
     Serial.println("Connection Failed");
+    return;
   }
 
 
@@ -156,6 +155,11 @@ void setup() {
   {
     /* enqueue very big number to make average large */
     enqueue(ll, createNodeSet(1000));
+  }
+
+  if (createUDPsocket() < 0)
+  {
+    Serial.println("Socket not created properly");
   }
 
 }
